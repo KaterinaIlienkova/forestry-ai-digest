@@ -91,7 +91,7 @@ def generate_digest(articles):
 Мова: ділова англійська (Professional English). Поверни тільки HTML-код без лапок чи блоків коду ```.
 """
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         contents=prompt,
     )
     return response.text
