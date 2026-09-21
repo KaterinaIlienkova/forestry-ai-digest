@@ -6,35 +6,60 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from google import genai
 
+# Розширений список джерел: офіційні сайти + динамічний пошук новин Google News за ключовими словами
 RSS_FEEDS = [
+    # Офіційні інститути та медіа
     "https://www.luke.fi/en/rss",
     "https://phys.org/rss-feed/earth-sciences/environment/",
+    
+    # Динамічний пошук по всьому інтернету за останні 7 днів:
+    # 1. ШІ та дистанційне зондування в лісовому секторі
+    "https://news.google.com/rss/search?q=forestry+remote+sensing+AI+when:7d&hl=en-US&gl=US&ceid=US:en",
+    # 2. Супутниковий моніторинг лісів та LiDAR
+    "https://news.google.com/rss/search?q=LiDAR+satellite+forest+monitoring+when:7d&hl=en-US&gl=US&ceid=US:en",
+    # 3. Регулювання вирубки лісів у ЄС (EUDR)
+    "https://news.google.com/rss/search?q=EUDR+forest+regulation+compliance+when:7d&hl=en-US&gl=US&ceid=US:en",
+    # 4. Фінські лісові технології
+    "https://news.google.com/rss/search?q=Finland+forestry+technology+when:7d&hl=en-US&gl=US&ceid=US:en"
 ]
 
 def fetch_recent_articles(days=7):
     articles = []
+    seen_links = set()  # Щоб уникнути дублікатів новин з різних запитів
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
-    print(f"Фільтрація новин за останні {days} днів...")
+    
+    print(f"Збір новин з розширених джерел...")
 
     for url in RSS_FEEDS:
-        feed = feedparser.parse(url)
-        for entry in feed.entries:
-            pub_date = None
-            if hasattr(entry, "published_parsed") and entry.published_parsed:
-                pub_date = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-            elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-                pub_date = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
-            
-            if pub_date is None or pub_date >= cutoff_date:
-                articles.append({
-                    "title": entry.title,
-                    "link": entry.link,
-                    "date": pub_date.strftime("%Y-%m-%d") if pub_date else "Recent",
-                    "summary": getattr(entry, "summary", "")[:400]
-                })
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:8]:
+                # Перевіряємо дублікати
+                if entry.link in seen_links:
+                    continue
+                seen_links.add(entry.link)
 
-    print(f"Знайдено статей: {len(articles)}")
-    return articles[:15]
+                # Перевірка дати
+                pub_date = None
+                if hasattr(entry, "published_parsed") and entry.published_parsed:
+                    pub_date = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+                elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+                    pub_date = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+
+                # Якщо в стрічці Google News дата свіжа або парсер не вказав точну мітку часу
+                if pub_date is None or pub_date >= cutoff_date:
+                    articles.append({
+                        "title": entry.title,
+                        "link": entry.link,
+                        "date": pub_date.strftime("%Y-%m-%d") if pub_date else "Recent",
+                        "summary": getattr(entry, "summary", "")[:500]
+                    })
+        except Exception as e:
+            print(f"Помилка зчитування стрічки {url}: {e}")
+
+    print(f"Всього знайдено релевантних статей: {len(articles)}")
+    # Беремо до 20 найцікавіших матеріалів і передаємо їх на фільтрацію моделі
+    return articles[:20]
 
 def generate_digest(articles):
     api_key = os.environ.get("GEMINI_API_KEY")
