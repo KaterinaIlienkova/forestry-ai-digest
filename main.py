@@ -1,22 +1,103 @@
 import os
 import smtplib
+import feedparser
+from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from google import genai
+
+RSS_FEEDS = [
+    "https://www.luke.fi/en/rss",
+    "https://phys.org/rss-feed/earth-sciences/environment/",
+]
+
+def fetch_recent_articles(days=7):
+    articles = []
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    print(f"Фільтрація новин за останні {days} днів...")
+
+    for url in RSS_FEEDS:
+        feed = feedparser.parse(url)
+        for entry in feed.entries:
+            pub_date = None
+            if hasattr(entry, "published_parsed") and entry.published_parsed:
+                pub_date = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+            elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+                pub_date = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+            
+            if pub_date is None or pub_date >= cutoff_date:
+                articles.append({
+                    "title": entry.title,
+                    "link": entry.link,
+                    "date": pub_date.strftime("%Y-%m-%d") if pub_date else "Recent",
+                    "summary": getattr(entry, "summary", "")[:400]
+                })
+
+    print(f"Знайдено статей: {len(articles)}")
+    return articles[:15]
+
+def generate_digest(articles):
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY не знайдено!")
+
+    if not articles:
+        return "<p>За останній тиждень нових релевантних публікацій не знайдено.</p>"
+
+    client = genai.Client(api_key=api_key)
+    articles_text = ""
+    for i, a in enumerate(articles, 1):
+        articles_text += f"{i}. [{a['date']}] {a['title']}\nURL: {a['link']}\nSummary: {a['summary']}\n\n"
+
+    prompt = f"""
+Ти — технічний радник та AI-аналітик компанії Metsäavain (Forest Key), Фінляндія.
+Компанія займається: лісовим сектором, AI, remote sensing, супутниками, LiDAR, GIS та регулюванням ЄС (EUDR).
+
+Ось статті за тиждень:
+{articles_text}
+
+Завдання:
+1. Обери 3-4 найважливіші статті.
+2. Сформуй чистий HTML (використовуй теги <h3>, <p>, <a>, <b>, <ul>, <li>).
+3. Для кожної статті розкрий:
+   - 📌 Заголовок як клікабельне посилання
+   - 💡 Коротку суть
+   - 🎯 So What? — чому це важливо для Metsäavain саме зараз.
+Мова: ділова англійська (Professional English). Поверни тільки HTML-код без лапок чи блоків коду ```.
+"""
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+    )
+    return response.text
 
 def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
     sender_email = os.environ.get("SENDER_EMAIL")
     sender_password = os.environ.get("SENDER_APP_PASSWORD")
 
     if not sender_email or not sender_password:
-        print("Помилка: SENDER_EMAIL або SENDER_APP_PASSWORD не знайдено в секретах!")
+        print("Помилка: SENDER_EMAIL або SENDER_APP_PASSWORD відсутні.")
         return
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "🌲 Weekly Forestry & Geospatial AI Briefing"
+    msg["Subject"] = f"🌲 Weekly Forestry & Geospatial AI Briefing — {datetime.now().strftime('%d.%m.%Y')}"
     msg["From"] = f"Metsäavain Radar <{sender_email}>"
     msg["To"] = recipient_email
 
-    msg.attach(MIMEText(html_content, "html"))
+    styled_html = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #222; max-width: 650px; margin: auto; padding: 20px;">
+        <h2 style="color: #2e7d32; border-bottom: 2px solid #2e7d32; padding-bottom: 8px;">
+          🌲 Weekly Geospatial & Forestry Intelligence
+        </h2>
+        <p style="color: #666; font-size: 13px;">Curated for Metsäavain leadership | Past 7 days update</p>
+        <div>{html_content}</div>
+        <hr style="border: none; border-top: 1px solid #ddd; margin-top: 30px;" />
+        <p style="font-size: 11px; color: #888;">Generated automatically by Forestry AI Digest Agent.</p>
+      </body>
+    </html>
+    """
+    msg.attach(MIMEText(styled_html, "html"))
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -25,3 +106,14 @@ def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
         print(f"✅ Лист успішно надіслано на {recipient_email}!")
     except Exception as e:
         print(f"❌ Помилка під час відправки пошти: {e}")
+
+def main():
+    print("1. Збір свіжих новин...")
+    articles = fetch_recent_articles(days=7)
+    print("2. Генерація дайджесту...")
+    digest_html = generate_digest(articles)
+    print("3. Відправка на пошту...")
+    send_email(digest_html, recipient_email="ileynkova.kate@gmail.com")
+
+if __name__ == "__main__":
+    main()
