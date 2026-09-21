@@ -1,4 +1,5 @@
 import os
+import time
 import smtplib
 import feedparser
 from datetime import datetime, timedelta, timezone
@@ -6,26 +7,19 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from google import genai
 
-# Розширений список джерел: офіційні сайти + динамічний пошук новин Google News за ключовими словами
+# Розширені джерела: офіційні сайти + динамічний пошук за ключовими словами за 7 днів
 RSS_FEEDS = [
-    # Офіційні інститути та медіа
     "https://www.luke.fi/en/rss",
     "https://phys.org/rss-feed/earth-sciences/environment/",
-    
-    # Динамічний пошук по всьому інтернету за останні 7 днів:
-    # 1. ШІ та дистанційне зондування в лісовому секторі
     "https://news.google.com/rss/search?q=forestry+remote+sensing+AI+when:7d&hl=en-US&gl=US&ceid=US:en",
-    # 2. Супутниковий моніторинг лісів та LiDAR
     "https://news.google.com/rss/search?q=LiDAR+satellite+forest+monitoring+when:7d&hl=en-US&gl=US&ceid=US:en",
-    # 3. Регулювання вирубки лісів у ЄС (EUDR)
     "https://news.google.com/rss/search?q=EUDR+forest+regulation+compliance+when:7d&hl=en-US&gl=US&ceid=US:en",
-    # 4. Фінські лісові технології
     "https://news.google.com/rss/search?q=Finland+forestry+technology+when:7d&hl=en-US&gl=US&ceid=US:en"
 ]
 
 def fetch_recent_articles(days=7):
     articles = []
-    seen_links = set()  # Щоб уникнути дублікатів новин з різних запитів
+    seen_links = set()
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
     
     print(f"Збір новин з розширених джерел...")
@@ -34,19 +28,16 @@ def fetch_recent_articles(days=7):
         try:
             feed = feedparser.parse(url)
             for entry in feed.entries[:8]:
-                # Перевіряємо дублікати
                 if entry.link in seen_links:
                     continue
                 seen_links.add(entry.link)
 
-                # Перевірка дати
                 pub_date = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
                     pub_date = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
                 elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
                     pub_date = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
 
-                # Якщо в стрічці Google News дата свіжа або парсер не вказав точну мітку часу
                 if pub_date is None or pub_date >= cutoff_date:
                     articles.append({
                         "title": entry.title,
@@ -58,7 +49,6 @@ def fetch_recent_articles(days=7):
             print(f"Помилка зчитування стрічки {url}: {e}")
 
     print(f"Всього знайдено релевантних статей: {len(articles)}")
-    # Беремо до 20 найцікавіших матеріалів і передаємо їх на фільтрацію моделі
     return articles[:20]
 
 def generate_digest(articles):
@@ -76,32 +66,51 @@ def generate_digest(articles):
 
     prompt = f"""
 Ти — технічний радник та AI-аналітик компанії Metsäavain (Forest Key), Фінляндія.
-Компанія займається: лісовим сектором, AI, remote sensing, супутниками, LiDAR, GIS та регулюванням ЄС (EUDR).
+Компанія фокусується на: лісовому секторі, AI, remote sensing, супутниках, LiDAR, GIS та регулюванні ЄС (EUDR).
 
-Ось статті за тиждень:
+Ось статті за останній тиждень:
 {articles_text}
 
 Завдання:
-1. Обери 3-4 найважливіші статті.
-2. Сформуй чистий HTML (використовуй теги <h3>, <p>, <a>, <b>, <ul>, <li>).
-3. Для кожної статті розкрий:
+1. Обери до 4 найважливіших статей для керівництва компанії.
+2. Сформуй структурований HTML-дайджест (використовуй теги <h3>, <p>, <a>, <b>, <ul>, <li>).
+3. Для кожної статті обов'язково зазнач:
    - 📌 Заголовок як клікабельне посилання
-   - 💡 Коротку суть
+   - 💡 Коротку суть (1-2 речення)
    - 🎯 So What? — чому це важливо для Metsäavain саме зараз.
-Мова: ділова англійська (Professional English). Поверни тільки HTML-код без лапок чи блоків коду ```.
+Мова: ділова англійська (Professional English). Поверни тільки чистий HTML-код без блоків коду чи лапок ```.
 """
-    response = client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt,
-    )
-    return response.text
+
+    # Список моделей за пріоритетом на випадок перевантаження серверів Google (503 error)
+    models_to_try = [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite"
+    ]
+
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            print(f"Спроба генерації через модель: {model_name}...")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            print(f"✅ Успішно згенеровано моделлю {model_name}!")
+            return response.text
+        except Exception as e:
+            print(f"⚠️ Модель {model_name} тимчасово перевантажена або недоступна ({e}). Чекаємо 3 сек...")
+            last_error = e
+            time.sleep(3)
+
+    raise RuntimeError(f"Всі доступні моделі повернули помилку: {last_error}")
 
 def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
     sender_email = os.environ.get("SENDER_EMAIL")
     sender_password = os.environ.get("SENDER_APP_PASSWORD")
 
     if not sender_email or not sender_password:
-        print("Помилка: SENDER_EMAIL або SENDER_APP_PASSWORD відсутні.")
+        print("Помилка: SENDER_EMAIL або SENDER_APP_PASSWORD відсутні в системних змінних.")
         return
 
     msg = MIMEMultipart("alternative")
@@ -135,8 +144,10 @@ def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
 def main():
     print("1. Збір свіжих новин...")
     articles = fetch_recent_articles(days=7)
+    
     print("2. Генерація дайджесту...")
     digest_html = generate_digest(articles)
+    
     print("3. Відправка на пошту...")
     send_email(digest_html, recipient_email="ileynkova.kate@gmail.com")
 
