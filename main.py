@@ -34,7 +34,7 @@ RSS_FEEDS = [
 ]
 
 def fetch_recent_articles(days=7):
-    """Fetches, deduplicates, and filters articles within the target time window."""
+    """Fetches, deduplicates, and filters articles within the target sliding window."""
     articles = []
     seen_links = set()
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
@@ -72,11 +72,11 @@ def fetch_recent_articles(days=7):
         except Exception as e:
             print(f"Warning: Failed to fetch feed {url}: {e}")
 
-    print(f"Total deduplicated articles collected for AI review: {len(articles)}")
+    print(f"Total deduplicated articles collected for review: {len(articles)}")
     return articles[:30]
 
 def generate_digest(articles):
-    """Generates an executive-level briefing tailored for management and sales."""
+    """Synthesizes executive briefing via Gemini with graceful degradation."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("Environment variable GEMINI_API_KEY is not set.")
@@ -84,8 +84,7 @@ def generate_digest(articles):
     if not articles:
         return "<p>No relevant forestry, regulatory, or geospatial updates were identified for the past 7 days.</p>"
 
-    client = genai.Client(api_key=api_key)
-
+    # Format collected articles into a structured text prompt
     articles_text = ""
     for i, a in enumerate(articles, 1):
         articles_text += f"{i}. [{a['date']}] {a['title']}\nURL: {a['link']}\nSummary: {a['summary']}\n\n"
@@ -115,41 +114,53 @@ Tone: Crisp, executive-level, commercially actionable business English.
 IMPORTANT: Return ONLY raw HTML snippet. Do not wrap response in markdown code blocks like ```html or ```.
 """
 
-    # Official active models as recommended by Google API
+    client = genai.Client(api_key=api_key)
+
+    # Use distinct infrastructure pools: Pro models have separate capacity from Flash
     models_to_try = [
+        "gemini-2.5-pro",
+        "gemini-3.5-pro",
         "gemini-3.8-flash",
-        "gemini-3.8-flash-lite",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash"
+        "gemini-3.6-flash"
     ]
 
-    last_error = None
     for model_name in models_to_try:
-        for attempt in range(1, 3):
-            try:
-                print(f"Attempting generation with model: {model_name} (attempt {attempt}/2)...")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                )
-                print(f"✅ Successfully synthesized briefing with {model_name}!")
+        try:
+            print(f"Attempting generation with model: {model_name}...")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            print(f"✅ Successfully synthesized briefing with {model_name}!")
 
-                # Strip accidental markdown wrappers
-                cleaned_html = response.text.strip()
-                if cleaned_html.startswith("```html"):
-                    cleaned_html = cleaned_html[7:]
-                if cleaned_html.startswith("```"):
-                    cleaned_html = cleaned_html[3:]
-                if cleaned_html.endswith("```"):
-                    cleaned_html = cleaned_html[:-3]
+            # Strip accidental markdown code block wrappers
+            cleaned_html = response.text.strip()
+            if cleaned_html.startswith("```html"):
+                cleaned_html = cleaned_html[7:]
+            if cleaned_html.startswith("```"):
+                cleaned_html = cleaned_html[3:]
+            if cleaned_html.endswith("```"):
+                cleaned_html = cleaned_html[:-3]
 
-                return cleaned_html.strip()
-            except Exception as e:
-                print(f"⚠️ Model {model_name} unavailable: {e}. Retrying in 6 seconds...")
-                last_error = e
-                time.sleep(6)
+            return cleaned_html.strip()
+        except Exception as e:
+            print(f"⚠️ Model {model_name} request failed: {e}. Trying next available model...")
+            time.sleep(3)
 
-    raise RuntimeError(f"All fallback models failed to generate content: {last_error}")
+    # Graceful degradation fallback: format articles directly if all API models are overloaded
+    print("⚠️ All AI model endpoints currently experiencing outages. Falling back to direct curated listing...")
+    fallback_html = "<h3>⚡ Weekly Curated Industry Intelligence (Direct Feed)</h3>"
+    fallback_html += "<p><i>Note: Automated AI synthesis temporarily bypassed due to API capacity constraints. Direct executive selection below:</i></p><ul>"
+    for a in articles[:6]:
+        fallback_html += f"""
+        <li style="margin-bottom: 16px;">
+            <b><a href="{a['link']}" target="_blank" style="color: #2e7d32; font-size: 15px;">{a['title']}</a></b> 
+            <span style="color: #7f8c8d; font-size: 12px;">({a['date']})</span>
+            <p style="margin: 4px 0 0 0; font-size: 13px; color: #34495e;">{a['summary']}</p>
+        </li>
+        """
+    fallback_html += "</ul>"
+    return fallback_html
 
 def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
     """Dispatches formatted HTML briefing via Gmail SMTP."""
