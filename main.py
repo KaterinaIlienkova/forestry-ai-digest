@@ -115,11 +115,12 @@ Tone: Crisp, executive-level, commercially actionable business English.
 IMPORTANT: Return ONLY raw HTML snippet. Do not wrap response in markdown code blocks like ```html or ```.
 """
 
+    # Official active models as recommended by Google API
     models_to_try = [
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-3.6-flash"
+        "gemini-3.8-flash",
+        "gemini-3.8-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash"
     ]
 
     last_error = None
@@ -144,9 +145,9 @@ IMPORTANT: Return ONLY raw HTML snippet. Do not wrap response in markdown code b
 
                 return cleaned_html.strip()
             except Exception as e:
-                print(f"⚠️ Model {model_name} unavailable: {e}. Retrying in 5 seconds...")
+                print(f"⚠️ Model {model_name} unavailable: {e}. Retrying in 6 seconds...")
                 last_error = e
-                time.sleep(5)
+                time.sleep(6)
 
     raise RuntimeError(f"All fallback models failed to generate content: {last_error}")
 
