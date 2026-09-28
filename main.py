@@ -7,92 +7,114 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from google import genai
 
-# Source list: verified industry feeds + dynamic 7-day keyword search via Google News RSS
+# Comprehensive feeds targeting executive leadership, international business, and sales
 RSS_FEEDS = [
-    # Official Finnish and scientific portals
-    "[https://www.luke.fi/en/rss](https://www.luke.fi/en/rss)",
-    "[https://phys.org/rss-feed/earth-sciences/environment/](https://phys.org/rss-feed/earth-sciences/environment/)",
-    
-    # Dynamic Google News queries targeting company domains (filtered to the past 7 days)
-    "[https://news.google.com/rss/search?q=forestry+remote+sensing+AI+when:7d&hl=en-US&gl=US&ceid=US:en](https://news.google.com/rss/search?q=forestry+remote+sensing+AI+when:7d&hl=en-US&gl=US&ceid=US:en)",
-    "[https://news.google.com/rss/search?q=LiDAR+satellite+forest+monitoring+when:7d&hl=en-US&gl=US&ceid=US:en](https://news.google.com/rss/search?q=LiDAR+satellite+forest+monitoring+when:7d&hl=en-US&gl=US&ceid=US:en)",
-    "[https://news.google.com/rss/search?q=EUDR+forest+regulation+compliance+when:7d&hl=en-US&gl=US&ceid=US:en](https://news.google.com/rss/search?q=EUDR+forest+regulation+compliance+when:7d&hl=en-US&gl=US&ceid=US:en)",
-    "[https://news.google.com/rss/search?q=Finland+forestry+technology+when:7d&hl=en-US&gl=US&ceid=US:en](https://news.google.com/rss/search?q=Finland+forestry+technology+when:7d&hl=en-US&gl=US&ceid=US:en)"
+    # 1. Institutional & Research Sources
+    "https://www.luke.fi/en/rss",
+    "https://phys.org/rss-feed/earth-sciences/environment/",
+    "https://forestsnews.cifor.org/feed",
+    "https://www.timber-online.net/rss",
+    "https://news.mongabay.com/feed/?post_type=post&s=forest+tech",
+
+    # 2. Regulatory & EUDR Compliance (Primary Sales & Commercial Drivers)
+    "https://news.google.com/rss/search?q=EUDR+deforestation+regulation+compliance&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=EUDR+timber+supply+chain+traceability&hl=en-US&gl=US&ceid=US:en",
+
+    # 3. Market Signals, Funding & Procurement (CEO & Business Development Focus)
+    "https://news.google.com/rss/search?q=forestry+tech+investment+funding+round&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=forest+inventory+remote+sensing+contract+tender&hl=en-US&gl=US&ceid=US:en",
+
+    # 4. Geospatial AI & Operational Technology Frontiers
+    "https://news.google.com/rss/search?q=geospatial+AI+satellite+forest+monitoring&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=LiDAR+drone+forestry+commercial&hl=en-US&gl=US&ceid=US:en",
+
+    # 5. Regional Context (Nordics & Emerging Partner Markets)
+    "https://news.google.com/rss/search?q=Finnish+forest+industry+digitalization&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=Ukraine+forestry+reform+digitalization&hl=en-US&gl=US&ceid=US:en"
 ]
 
 def fetch_recent_articles(days=7):
-    """Fetches and deduplicates recent articles from configured RSS feeds."""
+    """Fetches, deduplicates, and filters articles within the target time window."""
     articles = []
     seen_links = set()
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
-    
-    print(f"Collecting articles from feeds for the past {days} days...")
+
+    print(f"Collecting articles across feeds (sliding window: past {days} days)...")
 
     for url in RSS_FEEDS:
         try:
             feed = feedparser.parse(url)
+            print(f"Checking {url}: found {len(feed.entries)} entries")
+
             for entry in feed.entries[:8]:
-                # Avoid duplicate articles fetched across different keyword feeds
-                if entry.link in seen_links:
+                link = getattr(entry, "link", "")
+                if not link or link in seen_links:
                     continue
-                seen_links.add(entry.link)
+                seen_links.add(link)
 
-                # Parse publication or update timestamps
+                # Parse publication or update timestamps safely
                 pub_date = None
-                if hasattr(entry, "published_parsed") and entry.published_parsed:
-                    pub_date = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-                elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-                    pub_date = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+                parsed_time = getattr(entry, "published_parsed", None) or getattr(entry, "updated_parsed", None)
+                if parsed_time:
+                    try:
+                        pub_date = datetime(*parsed_time[:6], tzinfo=timezone.utc)
+                    except Exception:
+                        pub_date = None
 
+                # Keep article if it falls within the window or lacks a strict RSS timestamp
                 if pub_date is None or pub_date >= cutoff_date:
                     articles.append({
-                        "title": entry.title,
-                        "link": entry.link,
+                        "title": getattr(entry, "title", "No Title"),
+                        "link": link,
                         "date": pub_date.strftime("%Y-%m-%d") if pub_date else "Recent",
                         "summary": getattr(entry, "summary", "")[:500]
                     })
         except Exception as e:
-            print(f"Warning: Failed to parse feed {url}: {e}")
+            print(f"Warning: Failed to fetch feed {url}: {e}")
 
-    print(f"Total relevant articles collected: {len(articles)}")
-    return articles[:20]
+    print(f"Total deduplicated articles collected for AI review: {len(articles)}")
+    return articles[:30]
 
 def generate_digest(articles):
-    """Synthesizes collected articles into an executive briefing using Gemini."""
+    """Generates an executive-level briefing tailored for management and sales."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("Environment variable GEMINI_API_KEY is not set.")
 
     if not articles:
-        return "<p>No relevant forestry or geospatial AI updates were found for the past 7 days.</p>"
+        return "<p>No relevant forestry, regulatory, or geospatial updates were identified for the past 7 days.</p>"
 
     client = genai.Client(api_key=api_key)
-    
-    # Format collected articles into a structured prompt
+
     articles_text = ""
     for i, a in enumerate(articles, 1):
         articles_text += f"{i}. [{a['date']}] {a['title']}\nURL: {a['link']}\nSummary: {a['summary']}\n\n"
 
     prompt = f"""
-You are the Technical Advisor and Geospatial AI Intelligence Analyst for Metsäavain (Forest Key), a Finnish company based in Joensuu.
-Metsäavain specializes in: precision forestry, LiDAR point-cloud processing, remote sensing (satellite and drone), GIS pipelines, and EU Deforestation Regulation (EUDR) compliance solutions.
+You are the Strategic & Technical Intelligence Advisor for the leadership team at Metsäavain (Forest Key), Joensuu, Finland.
+Target audience: CEO, Director of International Business, and International Sales Representatives.
+Company core: Precision forestry, LiDAR point-cloud processing, remote sensing (satellite & drone), AI analytics pipelines, and EUDR compliance solutions.
 
-Here are the news items collected over the past 7 days:
+Collected news items from the past 7 days:
 {articles_text}
 
 Task:
-1. Curate and select the 3 to 4 most strategically significant articles for the company's executive leadership.
-2. Structure the output as clean HTML snippet (use standard HTML tags: <h3>, <p>, <a>, <b>, <ul>, <li>).
-3. For each selected article, provide:
-   - 📌 Clickable Title: An <a> tag linking to the original article with target="_blank"
-   - 💡 Executive Summary: 1-2 concise sentences outlining the breakthrough or news
-   - 🎯 "So What?" Strategic Relevance: Clearly explain why this matters to Metsäavain's technology, product roadmap, or regulatory positioning right now.
+1. Select 4 to 5 high-impact stories categorized where relevant under:
+   - 💼 Commercial & Market Signals (Investments, tenders, international market traction)
+   - ⚖️ Regulatory & EUDR Impact (Compliance deadlines, supply chain traceability, penalties)
+   - 🔬 Tech & Geospatial AI Frontiers (LiDAR, drone monitoring, inventory automation)
+2. Structure output as a clean, professionally formatted HTML snippet (using <h3>, <p>, <a>, <b>, <ul>, <li>).
+3. For each story, provide:
+   - 📌 Clickable Title: An <a> tag with target="_blank"
+   - 💡 Key Takeaway: 1-2 concise, fact-based sentences outlining the update
+   - 🎯 "So What for Metsäavain?":
+     * For CEO / International Business: What is the strategic risk or market opportunity?
+     * For Sales: How can our sales reps leverage this when pitching to prospective clients?
 
-Tone and Language: High-level, objective, professional business English.
-IMPORTANT: Return ONLY raw HTML snippet. Do not wrap the response in markdown blocks like ```html or ```.
+Tone: Crisp, executive-level, commercially actionable business English.
+IMPORTANT: Return ONLY raw HTML snippet. Do not wrap response in markdown code blocks like ```html or ```.
 """
 
-    # Fallback model tier list to handle temporary server capacity constraints (e.g. 503 errors)
     models_to_try = [
         "gemini-2.5-flash",
         "gemini-2.0-flash",
@@ -109,9 +131,9 @@ IMPORTANT: Return ONLY raw HTML snippet. Do not wrap the response in markdown bl
                     model=model_name,
                     contents=prompt,
                 )
-                print(f"✅ Successfully generated briefing with {model_name}!")
-                
-                # Clean up any potential markdown fences returned by the model
+                print(f"✅ Successfully synthesized briefing with {model_name}!")
+
+                # Strip accidental markdown wrappers
                 cleaned_html = response.text.strip()
                 if cleaned_html.startswith("```html"):
                     cleaned_html = cleaned_html[7:]
@@ -119,17 +141,17 @@ IMPORTANT: Return ONLY raw HTML snippet. Do not wrap the response in markdown bl
                     cleaned_html = cleaned_html[3:]
                 if cleaned_html.endswith("```"):
                     cleaned_html = cleaned_html[:-3]
-                    
+
                 return cleaned_html.strip()
             except Exception as e:
-                print(f"⚠️ Model {model_name} temporarily unavailable: {e}. Retrying in 5 seconds...")
+                print(f"⚠️ Model {model_name} unavailable: {e}. Retrying in 5 seconds...")
                 last_error = e
                 time.sleep(5)
 
     raise RuntimeError(f"All fallback models failed to generate content: {last_error}")
 
 def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
-    """Sends the formatted HTML briefing via Gmail SMTP."""
+    """Dispatches formatted HTML briefing via Gmail SMTP."""
     sender_email = os.environ.get("SENDER_EMAIL")
     sender_password = os.environ.get("SENDER_APP_PASSWORD")
 
@@ -138,19 +160,19 @@ def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
         return
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"🌲 Weekly Forestry & Geospatial AI Briefing — {datetime.now().strftime('%d.%m.%Y')}"
+    msg["Subject"] = f"🌲 Executive Forestry & Geospatial Briefing — {datetime.now().strftime('%d.%m.%Y')}"
     msg["From"] = f"Metsäavain Radar <{sender_email}>"
     msg["To"] = recipient_email
 
     styled_html = f"""
     <html>
-      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #2c3e50; max-width: 650px; margin: 0 auto; padding: 24px;">
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #2c3e50; max-width: 680px; margin: 0 auto; padding: 24px;">
         <div style="border-bottom: 2px solid #2e7d32; padding-bottom: 12px; margin-bottom: 20px;">
           <h2 style="color: #2e7d32; margin: 0; font-size: 22px;">
-            🌲 Weekly Geospatial & Forestry Intelligence
+            🌲 Executive Forestry & Geospatial Intelligence
           </h2>
           <p style="color: #7f8c8d; font-size: 13px; margin: 4px 0 0 0;">
-            Curated for Metsäavain leadership | Past 7 days briefing
+            Curated weekly intelligence for Metsäavain leadership & commercial team
           </p>
         </div>
         <div>
@@ -158,7 +180,7 @@ def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
         </div>
         <hr style="border: none; border-top: 1px solid #e0e0e0; margin-top: 36px; margin-bottom: 16px;" />
         <p style="font-size: 11px; color: #95a5a6; margin: 0;">
-          Generated automatically by Metsäavain Forestry AI Digest Agent via GitHub Actions.
+          Generated automatically by Metsäavain Geospatial AI Digest Agent via GitHub Actions.
         </p>
       </body>
     </html>
@@ -169,17 +191,17 @@ def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, recipient_email, msg.as_string())
-        print(f"✅ Briefing email successfully delivered to {recipient_email}!")
+        print(f"✅ Intelligence briefing delivered to {recipient_email}!")
     except Exception as e:
         print(f"❌ Failed to dispatch email: {e}")
 
 def main():
-    print("Step 1: Gathering fresh articles...")
+    print("Step 1: Gathering fresh industry and market intelligence...")
     articles = fetch_recent_articles(days=7)
-    
-    print("Step 2: Generating executive AI digest...")
+
+    print("Step 2: Synthesizing executive briefing via AI...")
     digest_html = generate_digest(articles)
-    
+
     print("Step 3: Dispatching email report...")
     send_email(digest_html, recipient_email="ileynkova.kate@gmail.com")
 
