@@ -296,7 +296,7 @@ def push_to_clickup(items):
                 task_custom_fields.append({"id": cat_field["id"], "value": matched_option.get("orderindex")})
 
         task_payload = {
-            "name": title,  # Чистий заголовок без префіксів [Category]
+            "name": title,
             "description": (
                 f"### 💡 Executive Summary\n{item.get('summary', '')}\n\n"
                 f"### 🎯 Strategic Signal for Metsäavain\n{strategic_signal}\n\n"
@@ -306,9 +306,8 @@ def push_to_clickup(items):
                 f"**Date:** {date_str}\n"
                 f"**Source URL:** [Read Full Story]({article_url})\n"
             ),
-            "tags": [entity.lower().replace(" ", "-")],  # Тільки ОДИН чистий тег компанії
-            "custom_fields": task_custom_fields,
-            "status": "to do"  # або "inbox"
+            "tags": [entity.lower().replace(" ", "-")],
+            "custom_fields": task_custom_fields
         }
 
         try:
