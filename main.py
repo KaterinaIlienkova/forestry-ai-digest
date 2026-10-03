@@ -7,44 +7,64 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from google import genai
 
-# Comprehensive feeds targeting executive leadership, international business, and sales
+# Global & regional intelligence feeds: Direct portals and language-agnostic entity searches
 RSS_FEEDS = [
-    # 1. Institutional & Research Sources
-    "https://www.luke.fi/en/rss",
-    "https://phys.org/rss-feed/earth-sciences/environment/",
-    "https://forestsnews.cifor.org/feed",
-    "https://www.timber-online.net/rss",
-    "https://news.mongabay.com/feed/?post_type=post&s=forest+tech",
+    # =========================================================================
+    # 1. DIRECT INDUSTRY & INSTITUTIONAL PORTALS
+    # =========================================================================
+    "https://feeds.yle.fi/uutiset/v1/recent.rss?publisherIds=YLE_UUTISET&concepts=18-35354",  # Yle: Forestry (Nordic regional)
+    "https://www.metsalehti.fi/feed/",                                                       # Metsälehti (Finnish forestry hub)
+    "https://www.luke.fi/en/rss",                                                            # Luke (Natural Resources Institute Finland)
+    "https://www.timber-online.net/rss",                                                     # Timber Online (Central Europe markets)
+    "https://forestsnews.cifor.org/feed",                                                    # CIFOR (International forestry policy)
+    "https://news.mongabay.com/feed/?post_type=post&s=forest+tech",                          # Mongabay (Global forest technologies)
 
-    # 2. Regulatory & EUDR Compliance (Primary Sales & Commercial Drivers)
-    "https://news.google.com/rss/search?q=EUDR+deforestation+regulation+compliance&hl=en-US&gl=US&ceid=US:en",
-    "https://news.google.com/rss/search?q=EUDR+timber+supply+chain+traceability&hl=en-US&gl=US&ceid=US:en",
+    # =========================================================================
+    # 2. COMPETITOR TRACKING (Language-Agnostic Entity Clusters)
+    # Target: Arbonaut, AFRY smart forestry, Sitowise, Field Finland, Koko Forest,
+    # CollectiveCrunch, Unique land use, Trimble Forestry, Microforest, Remsoft, Indufor, Triona, Interpine
+    # =========================================================================
+    "https://news.google.com/rss/search?q=(Arbonaut+OR+%22CollectiveCrunch%22+OR+%22Trimble+Forestry%22+OR+Indufor+OR+Remsoft)",
+    "https://news.google.com/rss/search?q=(%22AFRY+smart+forestry%22+OR+Sitowise+OR+%22Field+Finland%22+OR+%22Koko+Forest%22+OR+Triona+OR+Interpine)",
+    "https://news.google.com/rss/search?q=(%22Unique+land+use%22+OR+Microforest)+forestry",
 
-    # 3. Market Signals, Funding & Procurement (CEO & Business Development Focus)
-    "https://news.google.com/rss/search?q=forestry+tech+investment+funding+round&hl=en-US&gl=US&ceid=US:en",
-    "https://news.google.com/rss/search?q=forest+inventory+remote+sensing+contract+tender&hl=en-US&gl=US&ceid=US:en",
+    # =========================================================================
+    # 3. KEY CLIENTS, PROSPECTS & STAKEHOLDERS (Global Entity Clusters)
+    # Target: Ponsse, John Deere Forestry, Kesla, UPM, Stora Enso, Asian Pulp and Paper,
+    # Metsä Group, Mondi, APRIL, SAFCOL, York Timbers, New Forests, Tornator, Versowood,
+    # Finsilva, Koskisen, United Bankers Forest Fund, Metsähallitus
+    # =========================================================================
+    "https://news.google.com/rss/search?q=(Ponsse+OR+%22John+Deere+Forestry%22+OR+Kesla)+(forest+OR+harvester+OR+forestry)",
+    "https://news.google.com/rss/search?q=(%22Metsä+Group%22+OR+UPM+OR+%22Stora+Enso%22+OR+Mondi)+(investointi+OR+investment+OR+mill+OR+pulp)",
+    "https://news.google.com/rss/search?q=(%22Asian+Pulp+and+Paper%22+OR+%22APRIL+group%22+OR+SAFCOL+OR+%22York+Timbers%22+OR+%22New+Forests%22)",
+    "https://news.google.com/rss/search?q=(Tornator+OR+Versowood+OR+Finsilva+OR+Koskisen+OR+%22United+Bankers%22+OR+Metsähallitus)",
 
-    # 4. Geospatial AI & Operational Technology Frontiers
-    "https://news.google.com/rss/search?q=geospatial+AI+satellite+forest+monitoring&hl=en-US&gl=US&ceid=US:en",
-    "https://news.google.com/rss/search?q=LiDAR+drone+forestry+commercial&hl=en-US&gl=US&ceid=US:en",
+    # =========================================================================
+    # 4. MACRO INVESTMENTS, CAPITAL & INDUSTRIAL SCALE (Pulp, Sawmills, Biomass)
+    # =========================================================================
+    "https://news.google.com/rss/search?q=(forestry+OR+biomass+OR+pulp+OR+sawmill)+(investment+OR+acquisition+OR+%22funding+program%22)",
+    "https://news.google.com/rss/search?q=(metsäteollisuus+OR+sahateollisuus+OR+sellutehdas)+(investointi+OR+hanke+OR+rahoitus)",
+    "https://news.google.com/rss/search?q=(forestal+OR+celulosa+OR+aserradero)+(inversión+OR+planta+OR+adquisición)",
 
-    # 5. Regional Context (Nordics & Emerging Partner Markets)
-    "https://news.google.com/rss/search?q=Finnish+forest+industry+digitalization&hl=en-US&gl=US&ceid=US:en",
-    "https://news.google.com/rss/search?q=Ukraine+forestry+reform+digitalization&hl=en-US&gl=US&ceid=US:en"
+    # =========================================================================
+    # 5. REGULATION, NATIONAL LEGISLATION & EUDR TRACEABILITY
+    # =========================================================================
+    "https://news.google.com/rss/search?q=EUDR+(deforestation+OR+timber+OR+compliance+OR+traceability)",
+    "https://news.google.com/rss/search?q=(forestry+OR+metsätalous+OR+forestal)+(legislation+OR+policy+OR+sääntely+OR+reglamento)"
 ]
 
 def fetch_recent_articles(days=7):
-    """Fetches, deduplicates, and filters articles within the target sliding window."""
+    """Fetches, deduplicates, and filters multilingual articles within the target sliding window."""
     articles = []
     seen_links = set()
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
-    print(f"Collecting articles across feeds (sliding window: past {days} days)...")
+    print(f"Collecting articles across multilingual feeds (sliding window: past {days} days)...")
 
     for url in RSS_FEEDS:
         try:
             feed = feedparser.parse(url)
-            print(f"Checking {url}: found {len(feed.entries)} entries")
+            print(f"Checking {url[:75]}...: found {len(feed.entries)} entries")
 
             for entry in feed.entries[:8]:
                 link = getattr(entry, "link", "")
@@ -72,17 +92,17 @@ def fetch_recent_articles(days=7):
         except Exception as e:
             print(f"Warning: Failed to fetch feed {url}: {e}")
 
-    print(f"Total deduplicated articles collected for review: {len(articles)}")
-    return articles[:30]
+    print(f"Total deduplicated articles collected for executive review: {len(articles)}")
+    return articles[:45]
 
 def generate_digest(articles):
-    """Synthesizes executive briefing via Gemini with graceful degradation."""
+    """Synthesizes executive briefing via Gemini strictly aligned with management radar specifications."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("Environment variable GEMINI_API_KEY is not set.")
 
     if not articles:
-        return "<p>No relevant forestry, regulatory, or geospatial updates were identified for the past 7 days.</p>"
+        return "<p>No significant market shifts, competitor updates, or regulatory signals identified for the past 7 days.</p>"
 
     # Format collected articles into a structured text prompt
     articles_text = ""
@@ -90,33 +110,48 @@ def generate_digest(articles):
         articles_text += f"{i}. [{a['date']}] {a['title']}\nURL: {a['link']}\nSummary: {a['summary']}\n\n"
 
     prompt = f"""
-You are the Strategic & Technical Intelligence Advisor for the leadership team at Metsäavain (Forest Key), Joensuu, Finland.
-Target audience: CEO, Director of International Business, and International Sales Representatives.
-Company core: Precision forestry, LiDAR point-cloud processing, remote sensing (satellite & drone), AI analytics pipelines, and EUDR compliance solutions.
+You are the Executive Market & Strategic Intelligence Agent for the management team at Metsäavain (Forest Key), Joensuu, Finland.
+
+Core Objective:
+Synthesize strategic intelligence across global markets to identify critical shifts that might otherwise go unnoticed.
+Crucial constraint: This is NOT an active sales tool. Do not generate sales pitches. Generate clear, objective strategic signals so leadership can evaluate whether follow-up actions are warranted.
+
+Key Entities of Interest:
+- Competitors: Arbonaut, AFRY smart forestry, Sitowise, Field Finland, Koko Forest, CollectiveCrunch, Unique land use GmbH, Trimble Forestry, Microforest, Remsoft, Indufor, Triona, Interpine.
+- Target Clients & Key Stakeholders: Ponsse, John Deere Forestry, Kesla, UPM, Stora Enso, Asian Pulp and Paper, Metsä Group, Mondi, APRIL, SAFCOL, York Timbers, New Forests, Tornator, Versowood, Finsilva, Koskisen, United Bankers Forest Fund, Metsähallitus Forestry.
+- Core Sectors: Precision forestry, biomass energy, wood transformation, and pulp.
+
+Language Directive:
+- Raw articles may arrive in ANY world language (Finnish, English, Spanish, Portuguese, Swedish, German, etc.).
+- Analyze each article natively in its original language.
+- Translate and synthesize all findings uniformly into professional, executive-level English.
 
 Collected news items from the past 7 days:
 {articles_text}
 
 Task:
-1. Select 4 to 5 high-impact stories categorized where relevant under:
-   - 💼 Commercial & Market Signals (Investments, tenders, international market traction)
-   - ⚖️ Regulatory & EUDR Impact (Compliance deadlines, supply chain traceability, penalties)
-   - 🔬 Tech & Geospatial AI Frontiers (LiDAR, drone monitoring, inventory automation)
-2. Structure output as a clean, professionally formatted HTML snippet (using <h3>, <p>, <a>, <b>, <ul>, <li>).
-3. For each story, provide:
-   - 📌 Clickable Title: An <a> tag with target="_blank"
-   - 💡 Key Takeaway: 1-2 concise, fact-based sentences outlining the update
-   - 🎯 "So What for Metsäavain?":
-     * For CEO / International Business: What is the strategic risk or market opportunity?
-     * For Sales: How can our sales reps leverage this when pitching to prospective clients?
+1. Filter aggressively for SIGNIFICANCE. Skip trivial operational noise. Prioritize:
+   - Major industrial projects (new pulp mills, sawmills, major expansions, large-scale capital programs).
+   - Significant competitor moves (M&A, new software/platforms, strategic partnerships, major contracts, profit warnings, executive appointments).
+   - Major corporate shifts in named clients & forestry asset owners.
+   - Decisive policy, EUDR compliance, and national/international regulatory developments.
+2. Structure output into 5 clear HTML sections:
+   - ⚔️ Competitors & Market Movers (Arbonaut, Sitowise, Trimble, CollectiveCrunch, etc.)
+   - 🌲 Strategic Clients & Industry Giants (Ponsse, UPM, Stora Enso, Metsä Group, Tornator, etc.)
+   - 🏭 Major Capital Investments & Facilities (Pulp mills, sawmills, biomass plants, funding programs)
+   - ⚖️ Policy, Legislation & EUDR Compliance (National forest laws, EU directives, geolocation traceability)
+   - 🔬 Geospatial AI & Operational Technology (LiDAR point clouds, satellite algorithms, precision forestry tech)
+3. For each selected high-impact story (aim for 4 to 6 stories in total across sections):
+   - 📌 Clickable Title: (`<a href="..." target="_blank">Title</a>`)
+   - 💡 Executive Summary: 2-3 concise, fact-driven sentences explaining the core event.
+   - 🎯 Strategic Signal: 1 sharp sentence highlighting the direct impact, opportunity, or risk for Metsäavain leadership.
 
-Tone: Crisp, executive-level, commercially actionable business English.
-IMPORTANT: Return ONLY raw HTML snippet. Do not wrap response in markdown code blocks like ```html or ```.
+Tone: Crisp, objective, executive-level business English.
+IMPORTANT: Return ONLY the raw HTML snippet. Do not wrap response in markdown code blocks like ```html or ```.
 """
 
     client = genai.Client(api_key=api_key)
 
-    # Use distinct infrastructure pools: Pro models have separate capacity from Flash
     models_to_try = [
         "gemini-2.5-pro",
         "gemini-3.5-pro",
@@ -147,11 +182,11 @@ IMPORTANT: Return ONLY raw HTML snippet. Do not wrap response in markdown code b
             print(f"⚠️ Model {model_name} request failed: {e}. Trying next available model...")
             time.sleep(3)
 
-    # Graceful degradation fallback: format articles directly if all API models are overloaded
+    # Graceful degradation fallback: direct curated list if all LLM endpoints fail
     print("⚠️ All AI model endpoints currently experiencing outages. Falling back to direct curated listing...")
     fallback_html = "<h3>⚡ Weekly Curated Industry Intelligence (Direct Feed)</h3>"
     fallback_html += "<p><i>Note: Automated AI synthesis temporarily bypassed due to API capacity constraints. Direct executive selection below:</i></p><ul>"
-    for a in articles[:6]:
+    for a in articles[:8]:
         fallback_html += f"""
         <li style="margin-bottom: 16px;">
             <b><a href="{a['link']}" target="_blank" style="color: #2e7d32; font-size: 15px;">{a['title']}</a></b> 
@@ -172,7 +207,7 @@ def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
         return
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"🌲 Executive Forestry & Geospatial Briefing — {datetime.now().strftime('%d.%m.%Y')}"
+    msg["Subject"] = f"🌲 Metsäavain Executive Radar: Competitors, Clients & Policy — {datetime.now().strftime('%d.%m.%Y')}"
     msg["From"] = f"Metsäavain Radar <{sender_email}>"
     msg["To"] = recipient_email
 
@@ -181,10 +216,10 @@ def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #2c3e50; max-width: 680px; margin: 0 auto; padding: 24px;">
         <div style="border-bottom: 2px solid #2e7d32; padding-bottom: 12px; margin-bottom: 20px;">
           <h2 style="color: #2e7d32; margin: 0; font-size: 22px;">
-            🌲 Executive Forestry & Geospatial Intelligence
+            🌲 Metsäavain Executive Intelligence Radar
           </h2>
           <p style="color: #7f8c8d; font-size: 13px; margin: 4px 0 0 0;">
-            Curated weekly intelligence for Metsäavain leadership & commercial team
+            Weekly management overview: Competitors, Strategic Organizations, Capital & Policy
           </p>
         </div>
         <div>
@@ -192,7 +227,7 @@ def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
         </div>
         <hr style="border: none; border-top: 1px solid #e0e0e0; margin-top: 36px; margin-bottom: 16px;" />
         <p style="font-size: 11px; color: #95a5a6; margin: 0;">
-          Generated automatically by Metsäavain Geospatial AI Digest Agent via GitHub Actions.
+          Generated automatically by Metsäavain Executive Radar Agent via GitHub Actions.
         </p>
       </body>
     </html>
@@ -203,12 +238,12 @@ def send_email(html_content, recipient_email="ileynkova.kate@gmail.com"):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, recipient_email, msg.as_string())
-        print(f"✅ Intelligence briefing delivered to {recipient_email}!")
+        print(f"✅ Executive radar briefing delivered to {recipient_email}!")
     except Exception as e:
         print(f"❌ Failed to dispatch email: {e}")
 
 def main():
-    print("Step 1: Gathering fresh industry and market intelligence...")
+    print("Step 1: Gathering fresh multilingual market, competitor, and client intelligence...")
     articles = fetch_recent_articles(days=7)
 
     print("Step 2: Synthesizing executive briefing via AI...")
