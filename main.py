@@ -243,7 +243,8 @@ def build_html_digest(items):
 
 def push_to_clickup(items):
     """
-    Pushes structured intelligence items into ClickUp list tasks with clean Custom Fields.
+    Створює структуровані задачі в списку ClickUp з одночасним заповненням
+    Publication Date, Dropdown-категорії, Entity та Strategic Signal.
     """
     api_token = os.environ.get("CLICKUP_API_TOKEN")
     list_id = os.environ.get("CLICKUP_LIST_ID")
@@ -253,8 +254,8 @@ def push_to_clickup(items):
         return
 
     print(f"Step 4: Synchronizing {len(items)} items to ClickUp list {list_id}...")
-    
-    # 1. Отримуємо ID кастомних полів зі списку ClickUp
+
+    # 1. Завантажуємо схему кастомних полів списку
     fields_url = f"https://api.clickup.com/api/v2/list/{list_id}/field"
     headers = {
         "Authorization": api_token,
@@ -267,40 +268,64 @@ def push_to_clickup(items):
         with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             for f in data.get("fields", []):
-                custom_field_map[f.get("name", "").strip().lower()] = f
+                name_key = f.get("name", "").strip().lower()
+                custom_field_map[name_key] = f
     except Exception as e:
         print(f"  ⚠️ Could not fetch list custom fields: {e}")
 
     task_url = f"https://api.clickup.com/api/v2/list/{list_id}/task"
 
+    # 2. Створюємо картки для кожної відібраної новини
     for item in items:
-        category = item.get("category", "General")
+        category = item.get("category", "Competitors")
         entity = item.get("entity", "Forestry")
         title = item.get("title", "Signal")
         strategic_signal = item.get("strategic_signal", "")
         article_url = item.get("url", "")
         date_str = item.get("date", "")
-
-        # Заповнюємо кастомні поля, якщо вони створені в інтерфейсі
-        task_custom_fields = []
-
-        # Поле Strategic Signal
-        if "strategic signal" in custom_field_map:
-            field_id = custom_field_map["strategic signal"]["id"]
-            task_custom_fields.append({"id": field_id, "value": strategic_signal})
-
-        # Поле Entity
-        if "entity" in custom_field_map:
-            field_id = custom_field_map["entity"]["id"]
-            task_custom_fields.append({"id": field_id, "value": entity})
-
-        # Обчислюємо дату в мілісекундах
         date_ms = parse_date_to_epoch_ms(date_str)
 
-        # Додаємо кастомне поле дати, якщо воно створене в ClickUp
+        task_custom_fields = []
+
+        # Поле Publication Date (тип Date приймає unix timestamp в мс)
         if "publication date" in custom_field_map:
-            field_id = custom_field_map["publication date"]["id"]
-            task_custom_fields.append({"id": field_id, "value": date_ms})
+            task_custom_fields.append({
+                "id": custom_field_map["publication date"]["id"],
+                "value": date_ms
+            })
+
+        # Поле Strategic Signal (тип Text / Long Text)
+        if "strategic signal" in custom_field_map:
+            task_custom_fields.append({
+                "id": custom_field_map["strategic signal"]["id"],
+                "value": strategic_signal
+            })
+
+        # Поле Entity (тип Short Text)
+        if "entity" in custom_field_map:
+            task_custom_fields.append({
+                "id": custom_field_map["entity"]["id"],
+                "value": entity
+            })
+
+        # Поле Category (Dropdown: визначаємо orderindex варіанта за ключовими словами)
+        if "category" in custom_field_map:
+            cat_field = custom_field_map["category"]
+            options = cat_field.get("type_config", {}).get("options", [])
+            clean_category = category.lower().replace("&", "").strip()
+
+            matched_option = None
+            for opt in options:
+                opt_name = opt.get("name", "").lower().replace("&", "").strip()
+                if any(word in opt_name for word in clean_category.split() if len(word) > 3):
+                    matched_option = opt
+                    break
+
+            if matched_option is not None:
+                task_custom_fields.append({
+                    "id": cat_field["id"],
+                    "value": matched_option.get("orderindex")
+                })
 
         task_payload = {
             "name": title,
@@ -315,8 +340,10 @@ def push_to_clickup(items):
             ),
             "tags": [entity.lower().replace(" ", "-")],
             "custom_fields": task_custom_fields,
-            "due_date": date_ms  # заповнює системну дату задачі
+            "due_date": date_ms
+            # Поле status навмисно не передається: ClickUp автоматично кладе картку в 📥 INBOX
         }
+
         try:
             req = urllib.request.Request(
                 task_url,
