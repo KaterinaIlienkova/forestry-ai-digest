@@ -9,15 +9,13 @@ from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from google import genai
-import datetime
 
-# Конвертація YYYY-MM-DD у мілісекунди для ClickUp
 def parse_date_to_epoch_ms(date_str):
     try:
-        dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-        return int(dt.replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
     except Exception:
-        return int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+        return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 # Comprehensive feeds: Direct specialized portals and multilingual entity search clusters
 RSS_FEEDS = [
