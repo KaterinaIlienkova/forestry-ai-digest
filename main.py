@@ -236,8 +236,7 @@ def build_html_digest(items):
 
 def push_to_clickup(items):
     """
-    Pushes structured intelligence items into ClickUp list tasks.
-    Configured for private staging, categorization, and human-in-the-loop review.
+    Pushes structured intelligence items into ClickUp list tasks with clean Custom Fields.
     """
     api_token = os.environ.get("CLICKUP_API_TOKEN")
     list_id = os.environ.get("CLICKUP_LIST_ID")
@@ -247,44 +246,81 @@ def push_to_clickup(items):
         return
 
     print(f"Step 4: Synchronizing {len(items)} items to ClickUp list {list_id}...")
-    url = f"https://api.clickup.com/api/v2/list/{list_id}/task"
+    
+    # 1. Отримуємо ID кастомних полів зі списку ClickUp
+    fields_url = f"https://api.clickup.com/api/v2/list/{list_id}/field"
     headers = {
         "Authorization": api_token,
         "Content-Type": "application/json"
     }
 
+    custom_field_map = {}
+    try:
+        req = urllib.request.Request(fields_url, headers=headers, method="GET")
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            for f in data.get("fields", []):
+                custom_field_map[f.get("name", "").strip().lower()] = f
+    except Exception as e:
+        print(f"  ⚠️ Could not fetch list custom fields: {e}")
+
+    task_url = f"https://api.clickup.com/api/v2/list/{list_id}/task"
+
     for item in items:
-        category = item.get("category", "Market")
+        category = item.get("category", "General")
         entity = item.get("entity", "Forestry")
         title = item.get("title", "Signal")
+        strategic_signal = item.get("strategic_signal", "")
+        article_url = item.get("url", "")
+        date_str = item.get("date", "")
+
+        # Заповнюємо кастомні поля, якщо вони створені в інтерфейсі
+        task_custom_fields = []
+
+        # Поле Strategic Signal
+        if "strategic signal" in custom_field_map:
+            field_id = custom_field_map["strategic signal"]["id"]
+            task_custom_fields.append({"id": field_id, "value": strategic_signal})
+
+        # Поле Entity
+        if "entity" in custom_field_map:
+            field_id = custom_field_map["entity"]["id"]
+            task_custom_fields.append({"id": field_id, "value": entity})
+
+        # Поле Category (Dropdown)
+        if "category" in custom_field_map:
+            cat_field = custom_field_map["category"]
+            options = cat_field.get("type_config", {}).get("options", [])
+            matched_option = next((opt for opt in options if category.lower() in opt.get("name", "").lower()), None)
+            if matched_option:
+                task_custom_fields.append({"id": cat_field["id"], "value": matched_option.get("orderindex")})
 
         task_payload = {
-            "name": f"[{category}] {title}",
+            "name": title,  # Чистий заголовок без префіксів [Category]
             "description": (
                 f"### 💡 Executive Summary\n{item.get('summary', '')}\n\n"
-                f"### 🎯 Strategic Signal for Metsäavain\n{item.get('strategic_signal', '')}\n\n"
+                f"### 🎯 Strategic Signal for Metsäavain\n{strategic_signal}\n\n"
                 f"---\n"
+                f"**Category:** {category}\n"
                 f"**Entity / Sector:** {entity}\n"
-                f"**Date:** {item.get('date', '')}\n"
-                f"**Source URL:** [Read Original Article]({item.get('url', '')})\n"
+                f"**Date:** {date_str}\n"
+                f"**Source URL:** [Read Full Story]({article_url})\n"
             ),
-            "tags": [
-                category.lower().replace(" ", "-"),
-                entity.lower().replace(" ", "-")
-            ],
-            "status": "to do"
+            "tags": [entity.lower().replace(" ", "-")],  # Тільки ОДИН чистий тег компанії
+            "custom_fields": task_custom_fields,
+            "status": "to do"  # або "inbox"
         }
 
         try:
             req = urllib.request.Request(
-                url,
+                task_url,
                 data=json.dumps(task_payload).encode("utf-8"),
                 headers=headers,
                 method="POST"
             )
             with urllib.request.urlopen(req) as resp:
                 if resp.status in (200, 201):
-                    print(f"  ✓ ClickUp Task created: {title[:50]}...")
+                    print(f"  ✓ ClickUp Task created: {title[:45]}...")
         except urllib.error.HTTPError as e:
             print(f"  ⚠️ ClickUp API warning ({e.code}): {e.read().decode('utf-8')[:150]}")
         except Exception as e:
