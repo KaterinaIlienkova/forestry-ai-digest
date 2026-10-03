@@ -9,6 +9,15 @@ from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from google import genai
+import datetime
+
+# Конвертація YYYY-MM-DD у мілісекунди для ClickUp
+def parse_date_to_epoch_ms(date_str):
+    try:
+        dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        return int(dt.replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
+    except Exception:
+        return int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
 
 # Comprehensive feeds: Direct specialized portals and multilingual entity search clusters
 RSS_FEEDS = [
@@ -287,13 +296,13 @@ def push_to_clickup(items):
             field_id = custom_field_map["entity"]["id"]
             task_custom_fields.append({"id": field_id, "value": entity})
 
-        # Поле Category (Dropdown)
-        if "category" in custom_field_map:
-            cat_field = custom_field_map["category"]
-            options = cat_field.get("type_config", {}).get("options", [])
-            matched_option = next((opt for opt in options if category.lower() in opt.get("name", "").lower()), None)
-            if matched_option:
-                task_custom_fields.append({"id": cat_field["id"], "value": matched_option.get("orderindex")})
+        # Обчислюємо дату в мілісекундах
+        date_ms = parse_date_to_epoch_ms(date_str)
+
+        # Додаємо кастомне поле дати, якщо воно створене в ClickUp
+        if "publication date" in custom_field_map:
+            field_id = custom_field_map["publication date"]["id"]
+            task_custom_fields.append({"id": field_id, "value": date_ms})
 
         task_payload = {
             "name": title,
@@ -303,13 +312,13 @@ def push_to_clickup(items):
                 f"---\n"
                 f"**Category:** {category}\n"
                 f"**Entity / Sector:** {entity}\n"
-                f"**Date:** {date_str}\n"
-                f"**Source URL:** [Read Full Story]({article_url})\n"
+                f"**Published Date:** {date_str}\n"
+                f"**Original Article:** [Read Full Story]({article_url})\n"
             ),
             "tags": [entity.lower().replace(" ", "-")],
-            "custom_fields": task_custom_fields
+            "custom_fields": task_custom_fields,
+            "due_date": date_ms  # заповнює системну дату задачі
         }
-
         try:
             req = urllib.request.Request(
                 task_url,
